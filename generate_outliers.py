@@ -116,7 +116,7 @@ if __name__ == '__main__':
 
     if args.dataset == 'cd':
 
-        traj_path = "../../data/wch/datasets/chengdu"
+        traj_path = "../datasets/chengdu"
         path_list = os.listdir(traj_path)
         path_list.sort(key=lambda x: x.split('.'))
 
