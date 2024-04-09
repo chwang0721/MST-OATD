@@ -1,17 +1,17 @@
 # MST-OATD
 Code for "Multi-Scale Detection of Anomalous Spatio-Temporal Trajectories in Evolving Trajectory Datasets"
 ### Preprocessing
-- Step1: Download data (<tt>train.csv.zip</tt>) from https://www.kaggle.com/c/pkdd-15-predict-taxi-service-trajectory-i/data.
-- Step2: Put the data file in <tt>../datasets/porto/</tt>, and unzip it as <tt>porto.csv</tt>.
+- Step1: Download the Porto dataset (<tt>train.csv.zip</tt>) from https://www.kaggle.com/c/pkdd-15-predict-taxi-service-trajectory-i/data, and the Chengdu dataset (<tt>Chengdu.zip</tt>) from https://www.dropbox.com/scl/fi/w4jylj9het6x93btxud6o/Chengdu.zip?rlkey=w6x00pzyjk4z7fvxwhkryeq1l&dl=0.
+- Step2: Put the Porto data file in <tt>../datasets/porto/</tt>, and unzip it as <tt>porto.csv</tt>. Put the unzipped Chengdu data in <tt>../datasets/chengdu/</tt>.
 - Step3: Run preprocessing by
 ```
-mkdir -p data/porto
+mkdir -p data/<dataset_name>
 cd preprocess
-python preprocess_porto.py
+python preprocess_<dataset_name>.py
 cd ..
 mkdir logs models probs
 ```
-The pre-processed Chengdu sample data can be downloaded from https://www.dropbox.com/scl/fo/fxunogur65jbqhs69d2m6/h?rlkey=z8rzg0lxrtsx77bkeaunojq2i&dl=0.
+ <dataset_name>:  <tt>porto</tt> or  <tt>cd</tt>
 
 ### Generating ground truth
 
@@ -20,7 +20,6 @@ python generate_outliers.py --distance 2 --fraction 0.2 --obeserved_ratio 1.0 --
 ```
 distance is used to control the moving distance of outliers, fraction is the fraction of continuous outlier, obeserved_ratio is the ratio of the obeserved part of a trajectory.
 ### Training and testing
-Example on the Porto dataset:
 ```
 python train.py --task train --dataset <dataset_name>
 python train.py --task test --distance 2 --fraction 0.2 --obeserved_ratio 1.0 --dataset <dataset_name>
