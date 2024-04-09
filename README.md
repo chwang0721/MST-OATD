@@ -1,7 +1,7 @@
 # MST-OATD
 Code for "Multi-Scale Detection of Anomalous Spatio-Temporal Trajectories in Evolving Trajectory Datasets"
 ### Preprocessing
-- Step1: Download the Porto dataset (<tt>train.csv.zip</tt>) from https://www.kaggle.com/c/pkdd-15-predict-taxi-service-trajectory-i/data, and the Chengdu dataset (<tt>Chengdu.zip</tt>) from https://www.dropbox.com/scl/fi/w4jylj9het6x93btxud6o/Chengdu.zip?rlkey=w6x00pzyjk4z7fvxwhkryeq1l&dl=0.
+- Step1: Download the Porto dataset (<tt>train.csv.zip</tt>) from [Porto](https://www.kaggle.com/c/pkdd-15-predict-taxi-service-trajectory-i/data), and the Chengdu dataset (<tt>Chengdu.zip</tt>) from [Chengdu](https://www.dropbox.com/scl/fi/w4jylj9het6x93btxud6o/Chengdu.zip?rlkey=w6x00pzyjk4z7fvxwhkryeq1l&dl=0).
 - Step2: Put the Porto data file in <tt>../datasets/porto/</tt>, and unzip it as <tt>porto.csv</tt>. Put the unzipped Chengdu data in <tt>../datasets/chengdu/</tt>.
 - Step3: Run preprocessing by
 ```
@@ -26,7 +26,7 @@ python train.py --task test --distance 2 --fraction 0.2 --obeserved_ratio 1.0 --
 ```
 ### Training on evolving datasets
 ```
-python train_labels.py
+python train_labels.py --dataset <dataset_name>
 python train_update.py --update_mode pretrain --dataset <dataset_name> --train_num <train_num>
 ```
-update_mode contains three modes: pretrain, temporal, rank, <train_num> is the number of trajectories used for evolving training.
+update_mode contains three modes: <tt>pretrain</tt>, <tt>temporal</tt>, <tt>rank</tt>, <train_num> is the number of trajectories used for evolving training.
