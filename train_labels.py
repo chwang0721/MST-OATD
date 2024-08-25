@@ -1,6 +1,5 @@
 from multiprocessing import Pool
 
-import matplotlib.pyplot as plt
 import numpy as np
 import torch
 import torch.nn as nn
