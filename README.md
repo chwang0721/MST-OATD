@@ -1,5 +1,9 @@
 # MST-OATD
 Code for "Multi-Scale Detection of Anomalous Spatio-Temporal Trajectories in Evolving Trajectory Datasets"
+### Requirements
+```
+pip install -r requirements.txt
+```
 ### Preprocessing
 - Step1: Download the Porto dataset (<tt>train.csv.zip</tt>) from [Porto](https://www.kaggle.com/c/pkdd-15-predict-taxi-service-trajectory-i/data), and the Chengdu dataset (<tt>Chengdu.zip</tt>) from [Chengdu](https://www.dropbox.com/scl/fi/w4jylj9het6x93btxud6o/Chengdu.zip?rlkey=w6x00pzyjk4z7fvxwhkryeq1l&dl=0).
 - Step2: Put the Porto data file in <tt>../datasets/porto/</tt>, and unzip it as <tt>porto.csv</tt>. Put the unzipped Chengdu data in <tt>../datasets/chengdu/</tt>.
