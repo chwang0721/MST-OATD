@@ -34,3 +34,15 @@ python train_labels.py --dataset <dataset_name>
 python train_update.py --update_mode pretrain --dataset <dataset_name> --train_num <train_num>
 ```
 update_mode contains three modes: <tt>pretrain</tt>, <tt>temporal</tt>, <tt>rank</tt>, <train_num> is the number of trajectories used for evolving training.
+
+### Citation
+Please kindly cite our work if you find our paper or codes helpful.
+```
+@inproceedings{wang2024multi,
+  title={Multi-Scale Detection of Anomalous Spatio-Temporal Trajectories in Evolving Trajectory Datasets},
+  author={Wang, Chenhao and Chen, Lisi and Shang, Shuo and Jensen, Christian S and Kalnis, Panos},
+  booktitle={Proceedings of the 30th ACM SIGKDD Conference on Knowledge Discovery and Data Mining},
+  pages={2980--2990},
+  year={2024}
+}
+```
