@@ -324,7 +324,7 @@ class train_mst_oatd:
         logits = F.softmax(logits, dim=-1) + 1e-10
 
         logits_mean = torch.mean(logits, dim=0)
-        category_loss = torch.mean(pi * torch.log(logits_mean))
+        category_loss = torch.mean(logits_mean * torch.log(logits_mean))
 
         loss = reconstruction_loss + gaussian_loss / self.hidden_size + category_loss * 0.1
         return loss
