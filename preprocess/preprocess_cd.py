@@ -106,7 +106,7 @@ def main():
 
 
 if __name__ == "__main__":
-    traj_path = "../../datasets/chengdu"
+    traj_path = "../datasets/chengdu"
 
     grid_size = 0.1
     shortest, longest = 30, 100

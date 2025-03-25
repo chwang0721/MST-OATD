@@ -106,7 +106,7 @@ if __name__ == '__main__':
     random.seed(1234)
     np.random.seed(1234)
 
-    data_dir = '../../datasets/porto'
+    data_dir = '../datasets/porto'
     data_name = "porto"
 
     boundary = {'min_lat': 41.140092, 'max_lat': 41.185969, 'min_lng': -8.690261, 'max_lng': -8.549155}
