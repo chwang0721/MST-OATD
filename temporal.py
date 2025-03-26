@@ -8,7 +8,7 @@ class TemporalEmbedding:
         self.device = device
     
     def __call__(self, x):
-        self.model.load_state_dict(torch.load(self.model_path, map_location=self.device))
+        self.model.load_state_dict(torch.load(self.model_path, map_location=self.device, weights_only=False))
         with torch.no_grad():
             return self.model.encode(torch.Tensor(x).unsqueeze(0)).squeeze(0)
 

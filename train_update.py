@@ -20,7 +20,7 @@ def get_z(trajs):
 
 
 def load_gmm():
-    checkpoint = torch.load('./models/gmm_update_{}.pt'.format(args.dataset))
+    checkpoint = torch.load('./models/gmm_update_{}.pt'.format(args.dataset), weights_only=False)
     gmm = GaussianMixture(n_components=args.n_cluster, covariance_type='diag')
     gmm.weights_ = checkpoint['gmm_update_weights']
     gmm.means_ = checkpoint['gmm_update_means']
@@ -246,13 +246,13 @@ if __name__ == "__main__":
     MST_OATD = train_mst_oatd(s_token_size, t_token_size, None, None, None, args)
 
     MST_OATD.mode = 'update'
-    checkpoint = torch.load(MST_OATD.path_checkpoint)
+    checkpoint = torch.load(MST_OATD.path_checkpoint, weights_only=False)
     MST_OATD.MST_OATD_S.load_state_dict(checkpoint['model_state_dict_s'])
     MST_OATD.MST_OATD_T.load_state_dict(checkpoint['model_state_dict_t'])
 
     MST_OATD_U = train_mst_oatd(s_token_size, t_token_size, None, None, None, args)
 
-    checkpoint_U = torch.load(MST_OATD_U.path_checkpoint)
+    checkpoint_U = torch.load(MST_OATD_U.path_checkpoint, weights_only=False)
     MST_OATD_U.mode = 'update'
     MST_OATD_U.MST_OATD_S.load_state_dict(checkpoint_U['model_state_dict_s'])
     MST_OATD_U.MST_OATD_T.load_state_dict(checkpoint_U['model_state_dict_t'])
