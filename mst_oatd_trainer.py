@@ -141,7 +141,7 @@ class train_mst_oatd:
         torch.save(checkpoint, self.pretrained_path)
 
     def get_hidden(self):
-        checkpoint = torch.load(self.path_checkpoint)
+        checkpoint = torch.load(self.path_checkpoint, weights_only=False)
         self.MST_OATD_S.load_state_dict(checkpoint['model_state_dict_s'])
         self.MST_OATD_S.eval()
         with torch.no_grad():
@@ -157,7 +157,7 @@ class train_mst_oatd:
     def train_gmm(self):
         self.MST_OATD_S.eval()
         self.MST_OATD_T.eval()
-        checkpoint = torch.load(self.pretrained_path)
+        checkpoint = torch.load(self.pretrained_path, weights_only=False)
         self.MST_OATD_S.load_state_dict(checkpoint['model_state_dict_s'])
         self.MST_OATD_T.load_state_dict(checkpoint['model_state_dict_t'])
 
@@ -193,7 +193,7 @@ class train_mst_oatd:
 
     def train_gmm_update(self):
 
-        checkpoint = torch.load(self.path_checkpoint)
+        checkpoint = torch.load(self.path_checkpoint, weights_only=False)
         self.MST_OATD_S.load_state_dict(checkpoint['model_state_dict_s'])
         self.MST_OATD_S.eval()
 
@@ -328,11 +328,11 @@ class train_mst_oatd:
         return loss
 
     def load_mst_oatd(self):
-        checkpoint = torch.load(self.pretrained_path)
+        checkpoint = torch.load(self.pretrained_path, weights_only=False)
         self.MST_OATD_S.load_state_dict(checkpoint['model_state_dict_s'])
         self.MST_OATD_T.load_state_dict(checkpoint['model_state_dict_t'])
 
-        gmm_params = torch.load(self.gmm_path)
+        gmm_params = torch.load(self.gmm_path, weights_only=False)
 
         self.MST_OATD_S.pi_prior.data = torch.from_numpy(gmm_params['gmm_s_pi_prior']).to(self.device)
         self.MST_OATD_S.mu_prior.data = torch.from_numpy(gmm_params['gmm_s_mu_prior']).to(self.device)
@@ -344,7 +344,7 @@ class train_mst_oatd:
 
     def get_prob(self, z):
         gmm = GaussianMixture(n_components=self.n_cluster, covariance_type='diag')
-        gmm_params = torch.load(self.gmm_update_path)
+        gmm_params = torch.load(self.gmm_update_path, weights_only=False)
         gmm.precisions_cholesky_ = gmm_params['gmm_update_precisions_cholesky']
         gmm.weights_ = gmm_params['gmm_update_weights']
         gmm.means_ = gmm_params['gmm_update_means']

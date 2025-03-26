@@ -56,7 +56,7 @@ class Linear_Model:
         x = data.unsqueeze(1)
         x = (x - torch.mean(x)) / torch.std(x)
 
-        self.model.load_state_dict(torch.load("probs/linear_{}_{}.pth".format(num, args.dataset)))
+        self.model.load_state_dict(torch.load("probs/linear_{}_{}.pth".format(num, args.dataset), weights_only=False))
         self.model.eval()
         prediction = self.model(x).cpu()
 

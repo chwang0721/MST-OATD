@@ -49,7 +49,7 @@ def main():
         MST_OATD.logger.info("d = {}".format(args.distance) + ", " + chr(945) + " = {}".format(args.fraction) + ", "
               + chr(961) + " = {}".format(args.obeserved_ratio))
 
-        checkpoint = torch.load(MST_OATD.path_checkpoint)
+        checkpoint = torch.load(MST_OATD.path_checkpoint, weights_only=False)
         MST_OATD.MST_OATD_S.load_state_dict(checkpoint['model_state_dict_s'])
         MST_OATD.MST_OATD_T.load_state_dict(checkpoint['model_state_dict_t'])
         pr_auc = MST_OATD.detection()
