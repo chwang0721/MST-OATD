@@ -316,6 +316,7 @@ class train_mst_oatd:
         gaussian_loss = torch.mean(torch.mean(self.gaussian_pdf_log(z, z_mu, z_sigma2_log).unsqueeze(1) -
                                               self.gaussian_pdfs_log(z, mu_c, log_sigma2_c), dim=1), dim=-1).mean()
 
+        pi = F.softmax(pi, dim=-1)
         z = z.unsqueeze(1)
         mu_c = mu_c.unsqueeze(0)
         log_sigma2_c = log_sigma2_c.unsqueeze(0)
