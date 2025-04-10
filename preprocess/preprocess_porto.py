@@ -30,7 +30,7 @@ def preprocess(trajectories, traj_num, point_num):
 
                 if in_boundary(lat, lng, boundary):
                     grid_i = int((lat - boundary['min_lat']) / lat_size)
-                    grid_j = int((lng - boundary['min_lng']) / lng_size)
+                    grid_j = int((lng - boundary['min_lon']) / lng_size)
 
                     t = datetime.datetime.fromtimestamp(timestamp)
                     t = [t.hour, t.minute, t.second, t.year, t.month, t.day]  # Time vector
@@ -109,7 +109,7 @@ if __name__ == '__main__':
     data_dir = '../datasets/porto'
     data_name = "porto"
 
-    boundary = {'min_lat': 41.140092, 'max_lat': 41.185969, 'min_lng': -8.690261, 'max_lng': -8.549155}
+    boundary = {'min_lat': 41.140092, 'max_lat': 41.185969, 'min_lon': -8.690261, 'max_lon': -8.549155}
     grid_size = 0.1
     shortest, longest = 20, 50
 

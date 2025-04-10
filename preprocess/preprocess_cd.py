@@ -31,7 +31,7 @@ def preprocess(file, traj_path, shortest, longest, boundary, lat_size, lng_size,
         if point.id == pre_point.id and timestamp_gap(pre_point.timestamp, point.timestamp) <= 20:
             if in_boundary(point.lat, point.lon, boundary):
                 grid_i = int((point.lat - boundary['min_lat']) / lat_size)
-                grid_j = int((point.lon - boundary['min_lng']) / lng_size)
+                grid_j = int((point.lon - boundary['min_lon']) / lng_size)
                 traj_seq.append([grid_i * lng_grid_num + grid_j, convert_date(point[5])])
             else:
                 valid = False
@@ -110,7 +110,7 @@ if __name__ == "__main__":
 
     grid_size = 0.1
     shortest, longest = 30, 100
-    boundary = {'min_lat': 30.6, 'max_lat': 30.75, 'min_lng': 104, 'max_lng': 104.16}
+    boundary = {'min_lat': 30.6, 'max_lat': 30.75, 'min_lon': 104, 'max_lon': 104.16}
 
     lat_size, lng_size, lat_grid_num, lng_grid_num = grid_mapping(boundary, grid_size)
     A, D = generate_matrix(lat_grid_num, lng_grid_num)
