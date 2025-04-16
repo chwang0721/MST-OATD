@@ -1,6 +1,4 @@
-import datetime
 import os
-import time
 
 import networkx as nx
 import numpy as np
@@ -8,6 +6,8 @@ import pandas as pd
 import scipy.sparse as sparse
 from geopy import distance
 from pandas.errors import EmptyDataError
+from config import args
+from sklearn.model_selection import train_test_split
 
 
 # Determine whether a point is in boundary
@@ -24,20 +24,6 @@ def cutting_trajs(traj, longest, shortest):
         cutted_trajs.append(cutted_traj)
         traj = traj[random_length:]
     return cutted_trajs
-
-
-# convert datetime to time vector
-def convert_date(str):
-    timeArray = time.strptime(str, "%Y-%m-%d %H:%M:%S")
-    t = [timeArray.tm_hour, timeArray.tm_min, timeArray.tm_sec, timeArray.tm_year, timeArray.tm_mon, timeArray.tm_mday]
-    return t
-
-
-# Calculate timestamp gap
-def timestamp_gap(str1, str2):
-    timestamp1 = datetime.datetime.strptime(str1, "%Y-%m-%d %H:%M:%S")
-    timestamp2 = datetime.datetime.strptime(str2, "%Y-%m-%d %H:%M:%S")
-    return (timestamp2 - timestamp1).total_seconds()
 
 
 # Map trajectories to grids
@@ -57,18 +43,101 @@ def grid_mapping(boundary, grid_size):
 
 # Generate adjacency matrix and normalized degree matrix
 def generate_matrix(lat_grid_num, lng_grid_num):
-    G = nx.grid_2d_graph(lat_grid_num, lng_grid_num, periodic=False)
-    A = nx.adjacency_matrix(G)
-    I = sparse.identity(lat_grid_num * lng_grid_num)
-    D = np.diag(np.sum(A + I, axis=1))
-    D = 1 / (np.sqrt(D) + 1e-10)
-    D[D == 1e10] = 0.
-    D = sparse.csr_matrix(D)
-    return A + I, D
+    g = nx.grid_2d_graph(lat_grid_num, lng_grid_num, periodic=False)
+    a = nx.adjacency_matrix(g)
+    i = sparse.identity(lat_grid_num * lng_grid_num)
+    d = np.diag(np.sum(a + i, axis=1))
+    d = 1 / (np.sqrt(d) + 1e-10)
+    d[d == 1e10] = 0.
+    d = sparse.csr_matrix(d)
+    return a + i, d
 
+def create_grid(boundary):
+    lat_size, lon_size, lat_grid_num, lon_grid_num = grid_mapping(boundary, args.grid_size)
 
-if __name__ == '__main__':
-    traj_path = "../datasets/tdrive"
+    print('Grid size:', (lat_grid_num, lon_grid_num))
+    a, d = generate_matrix(lat_grid_num, lon_grid_num)
+
+    sparse.save_npz(f'../data/{args.dataset}/adj.npz', a)
+    sparse.save_npz(f'../data/{args.dataset}/d_norm.npz', d)
+
+    return lat_size, lon_size, lon_grid_num
+
+def preprocess(file, shortest, longest, boundary, convert_date,
+               timestamp_gap, grid_size, traj_nums, point_nums, columns):
+
+    # Read and sort trajectories based on id and timestamp
+    try:
+        data = pd.read_csv(f"../datasets/{args.dataset}/{file}", header=None)
+    except EmptyDataError:
+        return
+    filename = os.path.splitext(file)[0]
+    print("Processing " + file)
+
+    data.columns = columns # requires lon, lat, timestamp and id
+
+    trajs = []
+    traj_seq = []
+    valid = True
+
+    pre_point = data.iloc[0]
+
+    (lat_size, lon_size, lon_grid_num) = grid_size
+
+    # Select trajectories
+    for point in data.itertuples():
+        if point.id == pre_point.id and timestamp_gap(pre_point.timestamp, point.timestamp) <= args.max_traj_time_delta:
+            if in_boundary(point.lat, point.lon, boundary):
+                grid_i = int((point.lat - boundary['min_lat']) / lat_size)
+                grid_j = int((point.lon - boundary['min_lon']) / lon_size)
+                traj_seq.append([grid_i * lon_grid_num + grid_j, convert_date(point.timestamp)])
+            else:
+                valid = False
+
+        else:
+            if valid and len(traj_seq) > 1:
+                print("adding traj " + str(point.id))
+                if shortest <= len(traj_seq) <= longest:
+                    trajs.append(traj_seq)
+                elif len(traj_seq) > longest:
+                    trajs += cutting_trajs(traj_seq, longest, shortest)
+
+            traj_seq = []
+            valid = True
+        pre_point = point
+
+    if len(trajs) <= 0:
+        return
+
+    traj_nums.append(len(trajs))
+    point_nums.append(sum([len(traj) for traj in trajs]))
+    np.save(f"../data/{args.dataset}/data_{filename}.npy", np.array(trajs, dtype=object))
+
+def merge(files, outfile):
+    trajectories = []
+
+    for file in files:
+        try:
+            filename = os.path.splitext(file)[0]
+            file_trajs = np.load(f"../data/{args.dataset}/data_{filename}.npy", allow_pickle=True)
+        except FileNotFoundError: # empty files are skipped
+            continue
+        for traj in file_trajs:
+            trajectories.append(traj)
+
+    np.save(f"../data/{args.dataset}/{outfile}.npy", np.array(trajectories, dtype=object))
+
+def split_and_merge_files(files):
+    train_files, test_files = train_test_split(files, test_size=0.2, random_state=42)
+    print('Merging train trajectories')
+    merge(test_files, "train_init")
+    print('Merging test trajs')
+    merge(train_files, "test_init")
+
+    print('Finished!')
+
+def main():
+    traj_path = f"../datasets/{args.dataset}"
     min_lat = [float("inf")]
     max_lat = [-float("inf")]
 
