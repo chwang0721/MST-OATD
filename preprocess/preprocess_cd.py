@@ -3,8 +3,6 @@ import time
 from functools import partial
 from multiprocessing import Pool, Manager
 
-from sklearn.model_selection import train_test_split
-
 from preprocess_utils import *
 from config import args
 
@@ -22,7 +20,7 @@ def timestamp_gap(str1, str2):
     return (timestamp2 - timestamp1).total_seconds()
 
 def main():
-    print('Preprocessing')
+    print('Preprocessing Chengdu')
     files = os.listdir(f"../datasets/{args.dataset}")
 
     boundary = {'min_lat': 30.6, 'max_lat': 30.75, 'min_lon': 104, 'max_lon': 104.16}

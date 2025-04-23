@@ -6,6 +6,7 @@ import pandas as pd
 import scipy.sparse as sparse
 from geopy import distance
 from pandas.errors import EmptyDataError
+
 from config import args
 from sklearn.model_selection import train_test_split
 
@@ -16,14 +17,15 @@ def in_boundary(lat, lng, b):
 
 
 # Cut long trajectories
-def cutting_trajs(traj, longest, shortest):
-    cutted_trajs = []
-    while len(traj) > longest:
+def cut_trajectory(trajectory, longest, shortest):
+    trajectories = []
+    while len(trajectory) > longest:
         random_length = np.random.randint(shortest, longest)
-        cutted_traj = traj[:random_length]
-        cutted_trajs.append(cutted_traj)
-        traj = traj[random_length:]
-    return cutted_trajs
+        trajectories.append(trajectory[:random_length])
+        trajectory = trajectory[random_length:]
+    if len(trajectory) >= shortest:
+        trajectories.append(trajectory)
+    return trajectories
 
 
 # Map trajectories to grids
@@ -66,52 +68,64 @@ def create_grid(boundary):
 def preprocess(file, shortest, longest, boundary, convert_date,
                timestamp_gap, grid_size, traj_nums, point_nums, columns):
 
+    # Unpack
+    (lat_size, lon_size, lon_grid_num) = grid_size
+
     # Read and sort trajectories based on id and timestamp
     try:
-        data = pd.read_csv(f"../datasets/{args.dataset}/{file}", header=None)
+        data = pd.read_csv(f"../datasets/{args.dataset}/{file}", header=None, iterator=True, names=columns, chunksize=args.chunk_size)
     except EmptyDataError:
         return
     filename = os.path.splitext(file)[0]
-    print("Processing " + file)
 
-    data.columns = columns # requires lon, lat, timestamp and id
-
-    trajs = []
-    traj_seq = []
+    # Overridden on first iteration
+    point_seq = []
     valid = True
+    pre_point = None
 
-    pre_point = data.iloc[0]
+    trajectories = []
+    for chunk in data:
+        for point in chunk.itertuples():
+            if pre_point and point.id == pre_point.id and timestamp_gap(pre_point.timestamp, point.timestamp) <= args.max_traj_time_delta:
+                if in_boundary(point.lat, point.lon, boundary):
+                    grid_i = int((point.lat - boundary['min_lat']) / lat_size)
+                    grid_j = int((point.lon - boundary['min_lon']) / lon_size)
+                    point_seq.append([grid_i * lon_grid_num + grid_j, convert_date(point.timestamp)])
+                else:
+                    valid = False
 
-    (lat_size, lon_size, lon_grid_num) = grid_size
-
-    # Select trajectories
-    for point in data.itertuples():
-        if point.id == pre_point.id and timestamp_gap(pre_point.timestamp, point.timestamp) <= args.max_traj_time_delta:
-            if in_boundary(point.lat, point.lon, boundary):
-                grid_i = int((point.lat - boundary['min_lat']) / lat_size)
-                grid_j = int((point.lon - boundary['min_lon']) / lon_size)
-                traj_seq.append([grid_i * lon_grid_num + grid_j, convert_date(point.timestamp)])
             else:
-                valid = False
+                if valid and len(point_seq) > shortest:
+                    if len(point_seq) <= longest:
+                        trajectories.append(point_seq)  # add all points as a single trajectory
+                    else:
+                        trajectories += cut_trajectory(point_seq, longest, shortest) # split point sequence into multiple trajectories
+                point_seq = []
+                valid = True
+            pre_point = point
 
+    if valid and len(point_seq) > shortest:
+        if len(point_seq) <= longest:
+            trajectories.append(point_seq)  # add all points as a single trajectory
         else:
-            if valid and len(traj_seq) > 1:
-                print("adding traj " + str(point.id))
-                if shortest <= len(traj_seq) <= longest:
-                    trajs.append(traj_seq)
-                elif len(traj_seq) > longest:
-                    trajs += cutting_trajs(traj_seq, longest, shortest)
+            trajectories += cut_trajectory(point_seq, longest,
+                                           shortest)  # split point sequence into multiple trajectories
 
-            traj_seq = []
-            valid = True
-        pre_point = point
-
-    if len(trajs) <= 0:
+    if len(trajectories) <= 0:
         return
 
-    traj_nums.append(len(trajs))
-    point_nums.append(sum([len(traj) for traj in trajs]))
-    np.save(f"../data/{args.dataset}/data_{filename}.npy", np.array(trajs, dtype=object))
+    # At the end of your processing loop, before saving:
+    trajectories_array = np.ndarray(shape=(len(trajectories),), dtype=object, buffer=np.array(trajectories, dtype=object))
+
+
+
+    if len(trajectories_array.shape) != 1:
+        print(f"{filename} {trajectories_array.shape}")
+
+    traj_nums.append(len(trajectories))
+    point_nums.append(sum([len(traj) for traj in trajectories]))
+
+    np.save(f"../data/{args.dataset}/data_{filename}.npy", trajectories_array)
 
 def merge(files, outfile):
     trajectories = []
@@ -119,19 +133,20 @@ def merge(files, outfile):
     for file in files:
         try:
             filename = os.path.splitext(file)[0]
-            file_trajs = np.load(f"../data/{args.dataset}/data_{filename}.npy", allow_pickle=True)
+            file_trajectories = np.load(f"../data/{args.dataset}/data_{filename}.npy", allow_pickle=True)
+            trajectories.append(file_trajectories)
         except FileNotFoundError: # empty files are skipped
             continue
-        for traj in file_trajs:
-            trajectories.append(traj)
 
-    np.save(f"../data/{args.dataset}/{outfile}.npy", np.array(trajectories, dtype=object))
+    merged_trajectories = np.concatenate(trajectories, axis=0)
+    np.save(f"../data/{args.dataset}/{outfile}", merged_trajectories)
 
+# merges 80% of the files into train_init.npy and 20% into test_init.npy
 def split_and_merge_files(files):
     train_files, test_files = train_test_split(files, test_size=0.2, random_state=42)
     print('Merging train trajectories')
     merge(test_files, "train_init")
-    print('Merging test trajs')
+    print('Merging test trajectories')
     merge(train_files, "test_init")
 
     print('Finished!')

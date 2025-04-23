@@ -3,16 +3,13 @@ import time
 from functools import partial
 from multiprocessing import Pool, Manager
 
-from sklearn.model_selection import train_test_split
-
 from preprocess_utils import *
 from config import args
 
 # convert datetime to time vector
-def convert_date(str):
-    time_array = time.strptime(str, "%Y-%m-%d %H:%M:%S")
-    t = [time_array.tm_hour, time_array.tm_min, time_array.tm_sec, time_array.tm_year, time_array.tm_mon, time_array.tm_mday]
-    return t
+def convert_date(datestr):
+    time_array = time.strptime(datestr, "%Y-%m-%d %H:%M:%S")
+    return [time_array.tm_hour, time_array.tm_min, time_array.tm_sec, time_array.tm_year, time_array.tm_mon, time_array.tm_mday]
 
 
 # Calculate timestamp gap
@@ -22,7 +19,7 @@ def timestamp_gap(str1, str2):
     return (timestamp2 - timestamp1).total_seconds()
 
 def main():
-    print('Preprocessing')
+    print('Preprocessing TDrive')
     files = os.listdir(f"../datasets/{args.dataset}")
 
     boundary = {'min_lat': 0.1, 'max_lat': 90, 'min_lon': 0.1, 'max_lon': 250}
@@ -43,5 +40,4 @@ def main():
     print("Total trajectory num:", sum(traj_nums))
     print("Total point num:", sum(point_nums))
 
-    split_and_merge_files(files)
 
