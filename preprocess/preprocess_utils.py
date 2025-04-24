@@ -1,4 +1,5 @@
 import os
+from typing import Tuple
 
 import networkx as nx
 import numpy as np
@@ -27,11 +28,9 @@ def cut_trajectory(trajectory, longest, shortest):
         trajectories.append(trajectory)
     return trajectories
 
-
 # Map trajectories to grids
-def grid_mapping(boundary, grid_size):
-    lat_dist = distance.distance((boundary['min_lat'], boundary['min_lon']),
-                                 (boundary['max_lat'], boundary['min_lon'])).km
+def grid_mapping(boundary, grid_size:float):
+    lat_dist = distance.distance((boundary['min_lat'], boundary['min_lon']), (boundary['max_lat'], boundary['min_lon'])).km
     lat_size = (boundary['max_lat'] - boundary['min_lat']) / lat_dist * grid_size
 
     lng_dist = distance.distance((boundary['min_lat'], boundary['min_lon']),
@@ -42,6 +41,11 @@ def grid_mapping(boundary, grid_size):
     lng_grid_num = int(lng_dist / grid_size) + 1
     return lat_size, lng_size, lat_grid_num, lng_grid_num
 
+def grid_mapping(boundary, xy_cord:Tuple[int,int]):
+    x_cord, y_cord = xy_cord
+
+
+    return lat_size, lng_size, lat_grid_num, lng_grid_num
 
 # Generate adjacency matrix and normalized degree matrix
 def generate_matrix(lat_grid_num, lng_grid_num):
