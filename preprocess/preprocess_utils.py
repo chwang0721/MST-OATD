@@ -42,7 +42,7 @@ def grid_mapping(boundary, grid_size:float):
     lng_grid_num = int(lng_dist / grid_size) + 1
     return lat_size, lng_size, lat_grid_num, lng_grid_num
 
-def grid_mapping(boundary, grid_num:Tuple[int,int]):
+def manual_grid_mapping(boundary, grid_num:Tuple[int,int]):
     lat_grid_num, lng_grid_num = grid_num
     lat_dist = distance.distance((boundary['min_lat'], boundary['min_lon']), 
                                  (boundary['max_lat'], boundary['min_lon'])).km
@@ -67,7 +67,10 @@ def generate_matrix(lat_grid_num, lng_grid_num):
     return a + i, d
 
 def create_grid(boundary):
-    lat_size, lon_size, lat_grid_num, lon_grid_num = grid_mapping(boundary, args.grid_size)
+    if isinstance(args.grid_size, float):
+        lat_size, lon_size, lat_grid_num, lon_grid_num = grid_mapping(boundary, args.grid_size)
+    else:
+        lat_size, lon_size, lat_grid_num, lon_grid_num = manual_grid_mapping(boundary, args.grid_size)
 
     print('Grid size:', (lat_grid_num, lon_grid_num))
     a, d = generate_matrix(lat_grid_num, lon_grid_num)

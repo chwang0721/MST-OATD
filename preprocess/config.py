@@ -7,10 +7,7 @@ def float_or_int_tuple(value):
         return float(value)
     except ValueError:
         try:
-            # Case 2: Try parsing as a tuple of ints (e.g., "(1,2)" or "1,2")
-            if '(' in value and ')' in value:
-                # Strip parentheses if present
-                value = value.strip('()')
+            # Case 2: Try parsing as a tuple of ints (e.g., "1,2")
             # Split by commas and convert to integers
             parts = [int(x.strip()) for x in value.split(',')]
             return tuple(parts)
@@ -21,7 +18,7 @@ def float_or_int_tuple(value):
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--grid_size", type=float_or_int_tuple, 
-                    help="Input value (float or tuple of ints, standart values for porto e.g., '0.1' or '167,154/(167,154)')", default=0.1)
+                    help="Input value (float or tuple of ints, standart values for porto e.g., '0.1' or '167,154')", default=0.1)
 parser.add_argument("--dataset", type=str, default='porto')
 parser.add_argument("--max_traj_time_delta", type=int, default=1900)
 parser.add_argument("--find_boundary", type=bool, default=False)
