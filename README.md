@@ -28,12 +28,6 @@ distance is used to control the moving distance of outliers, fraction is the fra
 python train.py --task train --dataset <dataset_name>
 python train.py --task test --distance 2 --fraction 0.2 --obeserved_ratio 1.0 --dataset <dataset_name>
 ```
-### Training on evolving datasets
-```
-python train_labels.py --dataset <dataset_name>
-python train_update.py --update_mode pretrain --dataset <dataset_name> --train_num <train_num>
-```
-update_mode contains three modes: <tt>pretrain</tt>, <tt>temporal</tt>, <tt>rank</tt>, <train_num> is the number of trajectories used for evolving training.
 
 ### Citation
 Please kindly cite our work if you find our paper or codes helpful.

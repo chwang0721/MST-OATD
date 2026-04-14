@@ -65,7 +65,7 @@ class state_attention(nn.Module):
 
     def forward(self, seq):
         u = torch.tanh(torch.matmul(seq, self.w_omega))
-        att = torch.matmul(u, self.u_omega).squeeze()
+        att = torch.matmul(u, self.u_omega).squeeze(-1)
         att_score = F.softmax(att, dim=1).unsqueeze(2)
         scored_outputs = seq * att_score
         return scored_outputs.sum(1)
@@ -149,7 +149,7 @@ class MST_OATD(nn.Module):
     def attention_layer(self, e_input, lengths):
         mask = self.getMask(lengths)
         u = torch.tanh(torch.matmul(e_input, self.w_omega))
-        att = torch.matmul(u, self.u_omega).squeeze()
+        att = torch.matmul(u, self.u_omega).squeeze(-1)
         att = att.masked_fill(mask == 0, -1e10)
         att_score = F.softmax(att, dim=1).unsqueeze(2)
         att_e_input = e_input * att_score
@@ -198,7 +198,7 @@ class MST_OATD(nn.Module):
 
         decoder_inputs = pack_padded_sequence(d_inputs, lengths, batch_first=True, enforce_sorted=False)
 
-        if mode == "pretrain" or "train":
+        if mode in ("pretrain", "train"):
             encoder_inputs_s1 = pack_padded_sequence(self.attention_layer(st_inputs, lengths), lengths,
                                                      batch_first=True, enforce_sorted=False)
             encoder_inputs_s2 = self.scale_process(st_inputs, self.s1_size, [int(i // self.s1_size) for i in lengths])
@@ -208,19 +208,24 @@ class MST_OATD(nn.Module):
             _, encoder_final_state_s2 = self.encoder_s2(encoder_inputs_s2)
             _, encoder_final_state_s3 = self.encoder_s3(encoder_inputs_s3)
 
-            encoder_final_state = (self.W1 * encoder_final_state_s1 + self.W2 * encoder_final_state_s2
-                                   + self.W3 * encoder_final_state_s3)
-            sum_W = self.W1.data + self.W2.data + self.W3.data
-            self.W1.data /= sum_W
-            self.W2.data /= sum_W
-            self.W3.data /= sum_W
+            scale_weights = F.softmax(torch.stack((self.W1, self.W2, self.W3)).view(-1), dim=0)
+            encoder_final_state = (scale_weights[0] * encoder_final_state_s1
+                                   + scale_weights[1] * encoder_final_state_s2
+                                   + scale_weights[2] * encoder_final_state_s3)
 
-            mu = self.fc_mu(encoder_final_state)
-            logvar = self.fc_logvar(encoder_final_state)
-            z = self.reparameterize(mu, logvar)
+            if mode == "pretrain":
+                decoder_state = encoder_final_state
+                mu, logvar, z = None, None, encoder_final_state
+            else:
+                mu = self.fc_mu(encoder_final_state)
+                logvar = self.fc_logvar(encoder_final_state)
+                z = self.reparameterize(mu, logvar)
+                decoder_state = z
 
-            decoder_outputs, _ = self.decoder(decoder_inputs, z)
+            decoder_outputs, _ = self.decoder(decoder_inputs, decoder_state)
             decoder_outputs, _ = pad_packed_sequence(decoder_outputs, batch_first=True)
+            output = self.fc_out(self.layer_norm(decoder_outputs))
+            return output, mu, logvar, z
 
         elif mode == "test":
             mu = torch.stack([self.mu_prior] * batch_size, dim=1)[c: c + 1]

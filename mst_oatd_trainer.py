@@ -6,7 +6,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
-from sklearn.mixture import GaussianMixture
 from torch.optim.lr_scheduler import StepLR
 from torch.utils.data import Dataset
 
@@ -67,32 +66,34 @@ class train_mst_oatd:
         self.crit = nn.CrossEntropyLoss()
         self.detec = nn.CrossEntropyLoss(reduction='none')
 
-        self.pretrain_optimizer_s = optim.AdamW([
-            {'params': self.MST_OATD_S.parameters()},
-        ], lr=args.pretrain_lr_s)
+        self.gamma_params_s = [self.MST_OATD_S.pi_prior, self.MST_OATD_S.mu_prior, self.MST_OATD_S.log_var_prior]
+        self.gamma_params_t = [self.MST_OATD_T.pi_prior, self.MST_OATD_T.mu_prior, self.MST_OATD_T.log_var_prior]
 
-        self.pretrain_optimizer_t = optim.AdamW([
-            {'params': self.MST_OATD_T.parameters()},
-        ], lr=args.pretrain_lr_t)
+        gamma_ids_s = {id(param) for param in self.gamma_params_s}
+        gamma_ids_t = {id(param) for param in self.gamma_params_t}
+        self.phi_theta_params_s = [param for param in self.MST_OATD_S.parameters() if id(param) not in gamma_ids_s]
+        self.phi_theta_params_t = [param for param in self.MST_OATD_T.parameters() if id(param) not in gamma_ids_t]
 
-        self.optimizer_s = optim.AdamW([
-            {'params': self.MST_OATD_S.parameters()},
-        ], lr=args.lr_s)
+        self.pretrain_optimizer_s = optim.AdamW(self.phi_theta_params_s, lr=args.pretrain_lr_s)
+        self.pretrain_optimizer_t = optim.AdamW(self.phi_theta_params_t, lr=args.pretrain_lr_t)
 
-        self.optimizer_t = optim.Adam([
-            {'params': self.MST_OATD_T.parameters()},
-        ], lr=args.lr_t)
+        self.phi_theta_optimizer_s = optim.AdamW(self.phi_theta_params_s, lr=args.lr_s)
+        self.gamma_optimizer_s = optim.Adam(self.gamma_params_s, lr=args.lr_s)
+        self.phi_theta_optimizer_t = optim.Adam(self.phi_theta_params_t, lr=args.lr_t)
+        self.gamma_optimizer_t = optim.Adam(self.gamma_params_t, lr=args.lr_t)
 
         self.lr_pretrain_s = StepLR(self.pretrain_optimizer_s, step_size=2, gamma=0.9)
         self.lr_pretrain_t = StepLR(self.pretrain_optimizer_t, step_size=2, gamma=0.9)
+        self.lr_phi_theta_s = StepLR(self.phi_theta_optimizer_s, step_size=2, gamma=0.9)
+        self.lr_gamma_s = StepLR(self.gamma_optimizer_s, step_size=2, gamma=0.9)
+        self.lr_phi_theta_t = StepLR(self.phi_theta_optimizer_t, step_size=2, gamma=0.9)
+        self.lr_gamma_t = StepLR(self.gamma_optimizer_t, step_size=2, gamma=0.9)
 
         self.train_loader = train_loader
         self.outliers_loader = outliers_loader
 
         self.pretrained_path = 'models/pretrain_mstoatd_{}.pth'.format(args.dataset)
         self.path_checkpoint = 'models/mstoatd_{}.pth'.format(args.dataset)
-        self.gmm_path = "models/gmm_{}.pt".format(args.dataset)
-        self.gmm_update_path = "models/gmm_update_{}.pt".format(args.dataset)
         self.logger = get_logger("./logs/{}.log".format(args.dataset))
 
         self.labels = labels
@@ -105,9 +106,16 @@ class train_mst_oatd:
         self.s1_size = args.s1_size
         self.s2_size = args.s2_size
 
+    def set_parameter_state(self, phi_theta_grad, gamma_grad):
+        for param in self.phi_theta_params_s + self.phi_theta_params_t:
+            param.requires_grad_(phi_theta_grad)
+        for param in self.gamma_params_s + self.gamma_params_t:
+            param.requires_grad_(gamma_grad)
+
     def pretrain(self, epoch):
         self.MST_OATD_S.train()
         self.MST_OATD_T.train()
+        self.set_parameter_state(True, False)
         epo_loss = 0
 
         for batch in self.train_loader:
@@ -134,120 +142,128 @@ class train_mst_oatd:
 
         self.lr_pretrain_s.step()
         self.lr_pretrain_t.step()
+        self.set_parameter_state(True, True)
         epo_loss = "%.4f" % (epo_loss / len(self.train_loader))
         self.logger.info("Epoch {} pretrain loss: {}".format(epoch + 1, epo_loss))
         checkpoint = {"model_state_dict_s": self.MST_OATD_S.state_dict(),
                       "model_state_dict_t": self.MST_OATD_T.state_dict()}
         torch.save(checkpoint, self.pretrained_path)
 
-    def get_hidden(self):
-        checkpoint = torch.load(self.path_checkpoint)
-        self.MST_OATD_S.load_state_dict(checkpoint['model_state_dict_s'])
-        self.MST_OATD_S.eval()
-        with torch.no_grad():
-            z = []
-            for batch in self.train_loader:
-                trajs, times, seq_lengths = batch
-                batch_size = len(trajs)
-                _, _, _, hidden = self.MST_OATD_S(trajs, times, seq_lengths, batch_size, "pretrain", -1)
-                z.append(hidden.squeeze(0))
-            z = torch.cat(z, dim=0)
-        return z
-
-    def train_gmm(self):
-        self.MST_OATD_S.eval()
-        self.MST_OATD_T.eval()
-        checkpoint = torch.load(self.pretrained_path)
-        self.MST_OATD_S.load_state_dict(checkpoint['model_state_dict_s'])
-        self.MST_OATD_T.load_state_dict(checkpoint['model_state_dict_t'])
-
-        with torch.no_grad():
-            z_s = []
-            z_t = []
-            for batch in self.train_loader:
-                trajs, times, seq_lengths = batch
-                batch_size = len(trajs)
-                _, _, _, hidden_s = self.MST_OATD_S(trajs, times, seq_lengths, batch_size, "pretrain", -1)
-                _, _, _, hidden_t = self.MST_OATD_T(trajs, times, seq_lengths, batch_size, "pretrain", -1)
-
-                z_s.append(hidden_s.squeeze(0))
-                z_t.append(hidden_t.squeeze(0))
-            z_s = torch.cat(z_s, dim=0)
-            z_t = torch.cat(z_t, dim=0)
-
-        self.logger.info('Start fitting gaussian mixture model!')
-
-        self.gmm_s = GaussianMixture(n_components=self.n_cluster, covariance_type="diag", n_init=1)
-        self.gmm_s.fit(z_s.cpu().numpy())
-
-        self.gmm_t = GaussianMixture(n_components=self.n_cluster, covariance_type="diag", n_init=1)
-        self.gmm_t.fit(z_t.cpu().numpy())
-
-    def save_weights_for_MSTOATD(self):
-        savecheckpoint({"gmm_s_mu_prior": self.gmm_s.means_,
-                        "gmm_s_pi_prior": self.gmm_s.weights_,
-                        "gmm_s_logvar_prior": self.gmm_s.covariances_,
-                        "gmm_t_mu_prior": self.gmm_t.means_,
-                        "gmm_t_pi_prior": self.gmm_t.weights_,
-                        "gmms_t_logvar_prior": self.gmm_t.covariances_}, self.gmm_path)
-
-    def train_gmm_update(self):
-
-        checkpoint = torch.load(self.path_checkpoint)
-        self.MST_OATD_S.load_state_dict(checkpoint['model_state_dict_s'])
-        self.MST_OATD_S.eval()
-
-        with torch.no_grad():
-            z = []
-            for batch in self.train_loader:
-                trajs, times, seq_lengths = batch
-                batch_size = len(trajs)
-                _, _, _, hidden = self.MST_OATD_S(trajs, times, seq_lengths, batch_size, "pretrain", -1)
-                z.append(hidden.squeeze(0))
-            z = torch.cat(z, dim=0)
-
-        self.logger.info('Start fitting gaussian mixture model!')
-
-        self.gmm = GaussianMixture(n_components=self.n_cluster, covariance_type="diag", n_init=3)
-        self.gmm.fit(z.cpu().numpy())
-
-        savecheckpoint({"gmm_update_weights": self.gmm.weights_,
-                        "gmm_update_means": self.gmm.means_,
-                        "gmm_update_covariances": self.gmm.covariances_,
-                        "gmm_update_precisions_cholesky": self.gmm.precisions_cholesky_}, self.gmm_update_path)
-
     def train(self, epoch):
         self.MST_OATD_S.train()
         self.MST_OATD_T.train()
         total_loss = 0
+        total_recon = 0
+        total_kl_c = 0
+        total_kl_r = 0
         for batch in self.train_loader:
             trajs, times, seq_lengths = batch
             batch_size = len(trajs)
-
             mask = make_mask(make_len_mask(trajs)).to(self.device)
+            target_times = time_convert(times, self.time_interval)
 
-            self.optimizer_s.zero_grad()
-            self.optimizer_t.zero_grad()
+            self.set_parameter_state(True, False)
+            self.phi_theta_optimizer_s.zero_grad()
+            self.phi_theta_optimizer_t.zero_grad()
 
             x_hat_s, mu_s, log_var_s, z_s = self.MST_OATD_S(trajs, times, seq_lengths, batch_size, "train", -1)
-            loss = self.Loss(x_hat_s, trajs.to(self.device), mu_s.squeeze(0), log_var_s.squeeze(0),
-                             z_s.squeeze(0), 's', mask)
+            loss_s_phi, stats_s_phi = self.Loss(
+                x_hat_s, trajs.to(self.device), mu_s.squeeze(0), log_var_s.squeeze(0), z_s.squeeze(0),
+                self.MST_OATD_S, mask
+            )
             x_hat_t, mu_t, log_var_t, z_t = self.MST_OATD_T(trajs, times, seq_lengths, batch_size, "train", -1)
-            times = time_convert(times, self.time_interval)
-            loss += self.Loss(x_hat_t, times.to(self.device), mu_t.squeeze(0), log_var_t.squeeze(0),
-                              z_t.squeeze(0), 't', mask)
+            loss_t_phi, stats_t_phi = self.Loss(
+                x_hat_t, target_times.to(self.device), mu_t.squeeze(0), log_var_t.squeeze(0), z_t.squeeze(0),
+                self.MST_OATD_T, mask
+            )
+            loss_phi_theta = loss_s_phi + loss_t_phi
+            loss_phi_theta.backward()
+            self.phi_theta_optimizer_s.step()
+            self.phi_theta_optimizer_t.step()
 
-            loss.backward()
-            self.optimizer_s.step()
-            self.optimizer_t.step()
-            total_loss += loss.item()
+            self.set_parameter_state(False, True)
+            self.gamma_optimizer_s.zero_grad()
+            self.gamma_optimizer_t.zero_grad()
+
+            x_hat_s, mu_s, log_var_s, z_s = self.MST_OATD_S(trajs, times, seq_lengths, batch_size, "train", -1)
+            loss_s_gamma, stats_s_gamma = self.Loss(
+                x_hat_s, trajs.to(self.device), mu_s.squeeze(0), log_var_s.squeeze(0), z_s.squeeze(0),
+                self.MST_OATD_S, mask
+            )
+            x_hat_t, mu_t, log_var_t, z_t = self.MST_OATD_T(trajs, times, seq_lengths, batch_size, "train", -1)
+            loss_t_gamma, stats_t_gamma = self.Loss(
+                x_hat_t, target_times.to(self.device), mu_t.squeeze(0), log_var_t.squeeze(0), z_t.squeeze(0),
+                self.MST_OATD_T, mask
+            )
+            loss_gamma = loss_s_gamma + loss_t_gamma
+            loss_gamma.backward()
+            self.gamma_optimizer_s.step()
+            self.gamma_optimizer_t.step()
+
+            batch_loss = 0.5 * (loss_phi_theta.item() + loss_gamma.item())
+            total_loss += batch_loss
+            total_recon += 0.5 * (stats_s_phi['reconstruction'] + stats_t_phi['reconstruction'] +
+                                  stats_s_gamma['reconstruction'] + stats_t_gamma['reconstruction'])
+            total_kl_c += 0.5 * (stats_s_phi['category_kl'] + stats_t_phi['category_kl']
+                                 + stats_s_gamma['category_kl'] + stats_t_gamma['category_kl'])
+            total_kl_r += 0.5 * (stats_s_phi['gaussian_kl'] + stats_t_phi['gaussian_kl']
+                                 + stats_s_gamma['gaussian_kl'] + stats_t_gamma['gaussian_kl'])
+
+        self.set_parameter_state(True, True)
+        self.lr_phi_theta_s.step()
+        self.lr_gamma_s.step()
+        self.lr_phi_theta_t.step()
+        self.lr_gamma_t.step()
 
         if self.mode == "train":
-            total_loss = "%.4f" % (total_loss / len(self.train_loader))
-            self.logger.info('Epoch {} loss: {}'.format(epoch + 1, total_loss))
+            num_batches = len(self.train_loader)
+            self.logger.info(
+                'Epoch {} loss: {:.4f}, recon: {:.4f}, kl(c): {:.4f}, kl(r): {:.4f}'.format(
+                    epoch + 1,
+                    total_loss / num_batches,
+                    total_recon / num_batches,
+                    total_kl_c / num_batches,
+                    total_kl_r / num_batches,
+                )
+            )
             checkpoint = {"model_state_dict_s": self.MST_OATD_S.state_dict(),
                           "model_state_dict_t": self.MST_OATD_T.state_dict()}
             torch.save(checkpoint, self.path_checkpoint)
+
+    def pretrain_detection(self):
+        self.MST_OATD_S.eval()
+        self.MST_OATD_T.eval()
+
+        all_likelihood_s = []
+        all_likelihood_t = []
+
+        with torch.no_grad():
+            for batch in self.outliers_loader:
+                trajs, times, seq_lengths = batch
+                batch_size = len(trajs)
+                mask = make_mask(make_len_mask(trajs)).to(self.device)
+                times_token = time_convert(times, self.time_interval)
+
+                output_s, _, _, _ = self.MST_OATD_S(trajs, times, seq_lengths, batch_size, "pretrain", -1)
+                likelihood_s = -self.detec(output_s.reshape(-1, output_s.shape[-1]),
+                                           trajs.to(self.device).reshape(-1))
+                likelihood_s = torch.exp(
+                    torch.sum(mask * likelihood_s.reshape(batch_size, -1), dim=-1) / torch.sum(mask, 1))
+                all_likelihood_s.append(likelihood_s)
+
+                output_t, _, _, _ = self.MST_OATD_T(trajs, times, seq_lengths, batch_size, "pretrain", -1)
+                likelihood_t = -self.detec(output_t.reshape(-1, output_t.shape[-1]),
+                                           times_token.to(self.device).reshape(-1))
+                likelihood_t = torch.exp(
+                    torch.sum(mask * likelihood_t.reshape(batch_size, -1), dim=-1) / torch.sum(mask, 1))
+                all_likelihood_t.append(likelihood_t)
+
+        likelihood_s = torch.cat(all_likelihood_s, dim=0)
+        likelihood_t = torch.cat(all_likelihood_t, dim=0)
+
+        pr_auc = auc_score(self.labels, (1 - likelihood_s * likelihood_t).cpu().detach().numpy())
+        self.logger.info(f'Pretrain PR_AUC: {pr_auc:.6f}')
+        return pr_auc
 
     def detection(self):
 
@@ -301,57 +317,39 @@ class train_mst_oatd:
             G.append(self.gaussian_pdf_log(x, mus[c:c + 1, :], log_vars[c:c + 1, :]).view(-1, 1))
         return torch.cat(G, 1)
 
-    def Loss(self, x_hat, targets, z_mu, z_sigma2_log, z, mode, mask):
-        if mode == 's':
-            pi = self.MST_OATD_S.pi_prior
-            log_sigma2_c = self.MST_OATD_S.log_var_prior
-            mu_c = self.MST_OATD_S.mu_prior
-        elif mode == 't':
-            pi = self.MST_OATD_T.pi_prior
-            log_sigma2_c = self.MST_OATD_T.log_var_prior
-            mu_c = self.MST_OATD_T.mu_prior
+    def route_type_posterior(self, model, z):
+        log_pi = F.log_softmax(model.pi_prior, dim=-1)
+        log_q_c = log_pi.unsqueeze(0) + self.gaussian_pdfs_log(z, model.mu_prior, model.log_var_prior)
+        q_c = F.softmax(log_q_c, dim=-1).clamp_min(1e-10)
+        q_c = q_c / q_c.sum(dim=-1, keepdim=True)
+        return q_c, log_pi
 
+    def Loss(self, x_hat, targets, z_mu, z_log_var, z, model, mask):
         reconstruction_loss = self.crit(x_hat[mask == 1], targets[mask == 1])
 
-        gaussian_loss = torch.mean(torch.mean(self.gaussian_pdf_log(z, z_mu, z_sigma2_log).unsqueeze(1) -
-                                              self.gaussian_pdfs_log(z, mu_c, log_sigma2_c), dim=1), dim=-1).mean()
+        q_c, log_pi = self.route_type_posterior(model, z)
+        category_loss = torch.sum(q_c * (torch.log(q_c) - log_pi.unsqueeze(0)), dim=-1).mean()
 
-        pi = F.softmax(pi, dim=-1)
-        z = z.unsqueeze(1)
-        mu_c = mu_c.unsqueeze(0)
-        log_sigma2_c = log_sigma2_c.unsqueeze(0)
+        mu_c = model.mu_prior.unsqueeze(0)
+        log_var_c = model.log_var_prior.unsqueeze(0)
+        posterior_mu = z_mu.unsqueeze(1)
+        posterior_log_var = z_log_var.unsqueeze(1)
+        posterior_var = torch.exp(posterior_log_var)
+        prior_var = torch.exp(log_var_c)
 
-        logits = - torch.sum(torch.pow(z - mu_c, 2) / torch.exp(log_sigma2_c), dim=-1)
-        logits = F.softmax(logits, dim=-1) + 1e-10
-        category_loss = torch.mean(torch.sum(logits * (torch.log(logits) - torch.log(pi).unsqueeze(0)), dim=-1))
+        kl_r_c = 0.5 * torch.sum(log_var_c - posterior_log_var
+                                 + (posterior_var + (posterior_mu - mu_c).pow(2)) / (prior_var + 1e-10) - 1, dim=-1)
+        gaussian_loss = torch.sum(q_c * kl_r_c, dim=-1).mean()
 
-        loss = reconstruction_loss + gaussian_loss / self.hidden_size + category_loss * 0.1
-        return loss
+        loss = reconstruction_loss + category_loss + gaussian_loss
+        stats = {
+            'reconstruction': reconstruction_loss.item(),
+            'category_kl': category_loss.item(),
+            'gaussian_kl': gaussian_loss.item(),
+        }
+        return loss, stats
 
-    def load_mst_oatd(self):
+    def load_pretrained(self):
         checkpoint = torch.load(self.pretrained_path)
         self.MST_OATD_S.load_state_dict(checkpoint['model_state_dict_s'])
         self.MST_OATD_T.load_state_dict(checkpoint['model_state_dict_t'])
-
-        gmm_params = torch.load(self.gmm_path)
-
-        self.MST_OATD_S.pi_prior.data = torch.from_numpy(gmm_params['gmm_s_pi_prior']).to(self.device)
-        self.MST_OATD_S.mu_prior.data = torch.from_numpy(gmm_params['gmm_s_mu_prior']).to(self.device)
-        self.MST_OATD_S.log_var_prior.data = torch.from_numpy(gmm_params['gmm_s_logvar_prior']).to(self.device)
-
-        self.MST_OATD_T.pi_prior.data = torch.from_numpy(gmm_params['gmm_t_pi_prior']).to(self.device)
-        self.MST_OATD_T.mu_prior.data = torch.from_numpy(gmm_params['gmm_t_mu_prior']).to(self.device)
-        self.MST_OATD_T.log_var_prior.data = torch.from_numpy(gmm_params['gmms_t_logvar_prior']).to(self.device)
-
-    def get_prob(self, z):
-        gmm = GaussianMixture(n_components=self.n_cluster, covariance_type='diag')
-        gmm_params = torch.load(self.gmm_update_path)
-        gmm.precisions_cholesky_ = gmm_params['gmm_update_precisions_cholesky']
-        gmm.weights_ = gmm_params['gmm_update_weights']
-        gmm.means_ = gmm_params['gmm_update_means']
-        gmm.covariances_ = gmm_params['gmm_update_covariances']
-
-        probs = gmm.predict_proba(z)
-
-        for label in range(self.n_cluster):
-            np.save('probs/probs_{}_{}.npy'.format(label, self.dataset), np.sort(-probs[:, label]))

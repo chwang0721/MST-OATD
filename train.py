@@ -22,24 +22,22 @@ def main():
     labels = labels
 
     train_loader = DataLoader(dataset=train_data, batch_size=args.batch_size, shuffle=True, collate_fn=collate_fn,
-                              num_workers=8, pin_memory=True)
+                              pin_memory=True, num_workers=4)
     outliers_loader = DataLoader(dataset=test_data, batch_size=args.batch_size, shuffle=False, collate_fn=collate_fn,
-                                 num_workers=8, pin_memory=True)
+                                 pin_memory=True, num_workers=4)
 
     MST_OATD = train_mst_oatd(s_token_size, t_token_size, labels, train_loader, outliers_loader, args)
 
     if args.task == 'train':
 
         MST_OATD.logger.info("Start pretraining!")
-
         for epoch in range(args.pretrain_epochs):
             MST_OATD.pretrain(epoch)
 
-        MST_OATD.train_gmm()
-        MST_OATD.save_weights_for_MSTOATD()
-
         MST_OATD.logger.info("Start training!")
-        MST_OATD.load_mst_oatd()
+        if args.pretrain_epochs > 0:
+            MST_OATD.load_pretrained()
+
         for epoch in range(args.epochs):
             MST_OATD.train(epoch)
 
@@ -56,14 +54,8 @@ def main():
         pr_auc = "%.4f" % pr_auc
         MST_OATD.logger.info("PR_AUC: {}".format(pr_auc))
 
-    if args.task == 'train':
-        MST_OATD.train_gmm_update()
-        z = MST_OATD.get_hidden()
-        MST_OATD.get_prob(z.cpu())
-
-
 if __name__ == "__main__":
-
+    seed_torch(1234)
     if args.dataset == 'porto':
         s_token_size = 51 * 119
         t_token_size = 5760
